@@ -1,6 +1,11 @@
 #!/bin/zsh
 cd "$(dirname "$0")" || exit 1
-if [[ -f .env ]]; then
+CONFIG_FILE="$HOME/.config/tuteur-samuel/api.env"
+if [[ -f "$CONFIG_FILE" ]]; then
+  set -a
+  source "$CONFIG_FILE"
+  set +a
+elif [[ -f .env ]]; then
   set -a
   source .env
   set +a

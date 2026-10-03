@@ -55,4 +55,4 @@ Le bouton « Parler » prépare l’accès au futur mode Live. L’OAuth ChatGPT
 2. Coller une clé API OpenAI lorsque le Mac la demande.
 3. Relancer `Lancer Tuteur Samuel.command`.
 
-La clé est enregistrée localement dans `.env`, un fichier ignoré par Git. Elle n’est utilisée que si ChatGPT n’est pas connecté. Le modèle utilisé par défaut est `gpt-6-luna` et peut être remplacé avec `OPENAI_MODEL`.
+La clé est enregistrée dans le dossier privé `~/.config/tuteur-samuel/api.env`, hors du projet, d’iCloud et de GitHub. Elle n’est utilisée que si ChatGPT n’est pas connecté ou lorsqu’une fonction nécessitant l’API est activée. Le modèle utilisé par défaut est `gpt-6-luna` et peut être remplacé avec `OPENAI_MODEL`.
