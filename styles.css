@@ -208,7 +208,7 @@ canvas:focus-visible {
 .dialog-heading { display: flex; align-items: flex-start; gap: 16px; }
 .dialog-icon { flex: 0 0 auto; width: 44px; height: 44px; display: grid; place-items: center; color: white; background: #36946b; border-radius: 50%; font-size: 1.3rem; font-weight: 900; }
 .result-dialog h2 { margin: 2px 0 6px; font-size: 1.4rem; }
-.result-dialog p { margin: 0; color: var(--muted); line-height: 1.5; }
+.result-dialog p { margin: 0; color: var(--muted); line-height: 1.55; white-space: pre-line; }
 .result-dialog button { width: 100%; margin-top: 22px; color: white; background: var(--navy); }
 
 @keyframes pulse { 50% { transform: scale(1.35); opacity: 0.6; } }
@@ -227,4 +227,3 @@ canvas:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
 }
-

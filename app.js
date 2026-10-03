@@ -10,6 +10,7 @@ const photoCanvas = document.querySelector("#photoCanvas");
 const drawingCanvas = document.querySelector("#drawingCanvas");
 const status = document.querySelector("#status");
 const resultDialog = document.querySelector("#resultDialog");
+const resultTitle = document.querySelector("#resultTitle");
 const resultText = document.querySelector("#resultText");
 const closeDialogButton = document.querySelector("#closeDialogButton");
 
@@ -193,6 +194,7 @@ verifyButton.addEventListener("click", async () => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.message || "Erreur de vérification");
+    resultTitle.textContent = result.mode === "openai" ? "Voici mon conseil" : "Connexion presque prête";
     resultText.textContent = result.message;
     resultDialog.showModal();
     setStatus("Devoir prêt");
@@ -213,3 +215,9 @@ resultDialog.addEventListener("click", (event) => {
 
 updateControls();
 
+fetch("/api/status")
+  .then((response) => response.json())
+  .then((configuration) => {
+    setStatus(configuration.aiConfigured ? "IA connectée" : "Mode prototype");
+  })
+  .catch(() => setStatus("Prêt"));
