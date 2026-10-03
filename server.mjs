@@ -39,6 +39,11 @@ Retourne exclusivement un objet JSON valide, sans markdown, sous cette forme :
 
 Signale au maximum quatre points. x et y désignent le centre de la faute sur une grille fixe de 0 à 999, origine en haut à gauche. Si la copie est correcte, renvoie issues vide. Si la photo n'est pas exploitable, explique-le dans summary et renvoie issues vide. Réponds uniquement en français.`;
 
+const livePrompt = `Tu es Tuteur Samuel, un tuteur scolaire oral patient qui parle à un enfant en français.
+Parle avec des phrases courtes, chaleureuses et naturelles. Ne donne pas immédiatement la solution complète : pose une question, écoute la réponse, puis donne un indice progressif.
+Reste centré sur le devoir en cours. Félicite l'effort sans surjouer. Si tu n'es pas certain d'un élément visible sur la feuille, demande à l'enfant de le lire à voix haute.
+Ne traite qu'un point à la fois. Évite les longues listes. La séance dure au maximum vingt minutes.`;
+
 const mimeTypes = {
   ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
   ".js": "text/javascript; charset=utf-8", ".json": "application/json; charset=utf-8",
@@ -331,6 +336,45 @@ async function checkHomework(request, response) {
   }
 }
 
+async function createLiveSession(request, response) {
+  if (!process.env.OPENAI_API_KEY) return json(response, 503, { message: "La clé API vocale n’est pas configurée." });
+  const origin = request.headers.origin;
+  if (origin) {
+    try {
+      if (new URL(origin).host !== request.headers.host) return json(response, 403, { message: "Origine non autorisée." });
+    } catch { return json(response, 403, { message: "Origine non autorisée." }); }
+  }
+  const payload = await requestJson(request);
+  if (typeof payload.sdp !== "string" || !payload.sdp.trim() || payload.sdp.length > 64_000) {
+    return json(response, 400, { message: "Connexion audio invalide." });
+  }
+  const context = typeof payload.context === "string" ? payload.context.slice(0, 4_000) : "";
+  const openAIResponse = await fetch(`${resource}/live/sessions`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      "OpenAI-Safety-Identifier": "tuteur-samuel-local-child",
+    },
+    body: JSON.stringify({
+      session: {
+        model: "gpt-live-1",
+        instructions: context ? `${livePrompt}\n\nContexte de la correction actuelle :\n${context}` : livePrompt,
+        audio: { output: { voice: "marin" } },
+        store: false,
+      },
+      transport: { type: "webrtc", sdp: payload.sdp },
+    }),
+  });
+  const result = await openAIResponse.json().catch(() => ({}));
+  if (!openAIResponse.ok) {
+    const error = new Error(result.error?.message || "La conversation Live n’a pas pu démarrer.");
+    error.status = openAIResponse.status;
+    throw error;
+  }
+  return json(response, 201, result);
+}
+
 const server = createServer(async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   try {
@@ -341,12 +385,14 @@ const server = createServer(async (request, response) => {
       return json(response, 200, { connected: false });
     }
     if (request.method === "POST" && url.pathname === "/api/verify") return await checkHomework(request, response);
+    if (request.method === "POST" && url.pathname === "/api/live/session") return await createLiveSession(request, response);
     if (request.method === "GET" && url.pathname === "/api/status") {
       const auth = await validAuth();
       return json(response, 200, {
         aiConfigured: Boolean(auth || process.env.OPENAI_API_KEY), authConnected: Boolean(auth),
         provider: auth ? "chatgpt" : process.env.OPENAI_API_KEY ? "api-key" : "none",
         email: auth?.profile?.email || "", name: auth?.profile?.name || "", model: apiModel,
+        liveConfigured: Boolean(process.env.OPENAI_API_KEY),
       });
     }
     if (request.method === "GET" && url.pathname === "/api/models") {

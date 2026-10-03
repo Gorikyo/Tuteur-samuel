@@ -47,7 +47,9 @@ Le modèle d’analyse recommandé est sélectionné automatiquement lorsqu’il
 
 ## Conversation vocale
 
-Le bouton « Parler » prépare l’accès au futur mode Live. L’OAuth ChatGPT utilisé par l’application autorise actuellement les requêtes Responses, mais pas l’audio temps réel. Un vrai dialogue vocal demandera donc une clé API vocale conservée uniquement sur le Mac.
+Le bouton « Parler » démarre une conversation avec `gpt-live-1` lorsque la clé API est configurée. La clé reste sur le serveur local et n’est jamais transmise au navigateur. Chaque séance est limitée automatiquement à 20 minutes.
+
+Le microphone fonctionne sur `localhost` depuis le Mac. Sur l’iPad, Safari exige une adresse HTTPS : l’adresse Wi-Fi locale en HTTP permet de tester le reste de l’application, mais pas encore le mode vocal.
 
 ## Solution de secours : clé API
 

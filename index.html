@@ -119,6 +119,17 @@
       </div>
     </dialog>
 
+    <dialog class="voice-dialog" id="voiceDialog">
+      <button class="dialog-close" id="closeVoiceButton" type="button" aria-label="Fermer">×</button>
+      <div class="voice-orb" id="voiceOrb" aria-hidden="true"><span></span><span></span><span></span></div>
+      <h2>Parler au tuteur</h2>
+      <p class="voice-status" id="voiceStatus" role="status" aria-live="polite">Préparation du micro…</p>
+      <p class="voice-timer" id="voiceTimer">00:00 / 20:00</p>
+      <audio id="voiceAudio" autoplay hidden></audio>
+      <button class="end-voice-button" id="endVoiceButton" type="button" disabled>Terminer la conversation</button>
+      <small id="voiceHelp">La conversation s’arrête automatiquement après 20 minutes.</small>
+    </dialog>
+
     <script type="module" src="app.js"></script>
   </body>
 </html>

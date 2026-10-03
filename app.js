@@ -25,6 +25,14 @@ const signedInSettings = document.querySelector("#signedInSettings");
 const connectedAccount = document.querySelector("#connectedAccount");
 const modelSelect = document.querySelector("#modelSelect");
 const disconnectButton = document.querySelector("#disconnectButton");
+const voiceDialog = document.querySelector("#voiceDialog");
+const closeVoiceButton = document.querySelector("#closeVoiceButton");
+const voiceStatus = document.querySelector("#voiceStatus");
+const voiceTimer = document.querySelector("#voiceTimer");
+const voiceAudio = document.querySelector("#voiceAudio");
+const voiceOrb = document.querySelector("#voiceOrb");
+const endVoiceButton = document.querySelector("#endVoiceButton");
+const voiceHelp = document.querySelector("#voiceHelp");
 
 const photoContext = photoCanvas.getContext("2d");
 const drawingContext = drawingCanvas.getContext("2d");
@@ -36,7 +44,17 @@ let hasPhoto = false;
 let stylusOnly = true;
 let activePointerId = null;
 let correctionIssues = [];
+let lastCorrectionContext = "";
 let configuration = { authConnected: false, provider: "none" };
+let voicePeer = null;
+let voiceEvents = null;
+let voiceMicrophone = null;
+let voiceStartedAt = 0;
+let voiceTimerInterval = null;
+let voiceLimitTimeout = null;
+let voiceCloseTimeout = null;
+let voiceActive = false;
+let voiceConnecting = false;
 
 function setStatus(message, busy = false) {
   status.lastChild.textContent = ` ${message}`;
@@ -232,6 +250,11 @@ function renderIssueMarkers() {
 
 function showCorrection(result) {
   correctionIssues = Array.isArray(result.issues) ? result.issues : [];
+  lastCorrectionContext = [
+    result.summary || result.message || "",
+    ...correctionIssues.map((issue) => `${issue.title} : ${issue.hint}`),
+    result.nextAction || "",
+  ].filter(Boolean).join("\n");
   renderIssueMarkers();
   resultTitle.textContent = ["chatgpt", "api-key"].includes(result.mode) ? "Voici mon conseil" : "Connexion presque prête";
   resultText.textContent = result.summary || result.message;
@@ -286,11 +309,155 @@ verifyButton.addEventListener("click", async () => {
   }
 });
 
+function updateVoiceTimer() {
+  const elapsedSeconds = Math.min(20 * 60, Math.floor((Date.now() - voiceStartedAt) / 1000));
+  const minutes = String(Math.floor(elapsedSeconds / 60)).padStart(2, "0");
+  const seconds = String(elapsedSeconds % 60).padStart(2, "0");
+  voiceTimer.textContent = `${minutes}:${seconds} / 20:00`;
+}
+
+function cleanupVoice(message = "Conversation terminée.") {
+  clearInterval(voiceTimerInterval);
+  clearTimeout(voiceLimitTimeout);
+  clearTimeout(voiceCloseTimeout);
+  voiceMicrophone?.getTracks().forEach((track) => track.stop());
+  voiceEvents?.close();
+  voicePeer?.close();
+  voiceAudio.srcObject = null;
+  voicePeer = null;
+  voiceEvents = null;
+  voiceMicrophone = null;
+  voiceActive = false;
+  voiceConnecting = false;
+  endVoiceButton.disabled = true;
+  voiceOrb.classList.remove("listening");
+  voiceStatus.textContent = message;
+  voiceButton.classList.remove("active");
+  voiceButton.lastChild.textContent = " Parler";
+}
+
+function endVoiceConversation() {
+  if (!voiceActive) return cleanupVoice();
+  endVoiceButton.disabled = true;
+  voiceStatus.textContent = "Fin de la conversation…";
+  if (voiceEvents?.readyState === "open") {
+    voiceEvents.send(JSON.stringify({ type: "session.close" }));
+    voiceCloseTimeout = setTimeout(() => cleanupVoice(), 15_000);
+  } else {
+    cleanupVoice();
+  }
+}
+
+async function waitForIce(connection) {
+  if (connection.iceGatheringState === "complete") return;
+  await new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      connection.removeEventListener("icegatheringstatechange", onChange);
+      reject(new Error("Le micro n’a pas pu établir la connexion."));
+    }, 10_000);
+    function onChange() {
+      if (connection.iceGatheringState !== "complete") return;
+      clearTimeout(timeout);
+      connection.removeEventListener("icegatheringstatechange", onChange);
+      resolve();
+    }
+    connection.addEventListener("icegatheringstatechange", onChange);
+  });
+}
+
+async function startVoiceConversation() {
+  if (voiceConnecting || voiceActive) return;
+  if (!voiceDialog.open) voiceDialog.showModal();
+  voiceTimer.textContent = "00:00 / 20:00";
+  voiceHelp.textContent = "La conversation s’arrête automatiquement après 20 minutes.";
+  if (!configuration.liveConfigured) {
+    voiceStatus.textContent = "La clé API vocale n’est pas encore chargée sur le serveur.";
+    return;
+  }
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    voiceStatus.textContent = "Le microphone est bloqué sur cette adresse HTTP.";
+    voiceHelp.textContent = "Utilise localhost sur le Mac. Pour l’iPad, il faut d’abord une adresse HTTPS.";
+    return;
+  }
+
+  voiceStatus.textContent = "Autorise le microphone…";
+  voiceConnecting = true;
+  voiceButton.classList.add("active");
+  voiceButton.lastChild.textContent = " En direct";
+  try {
+    const connection = new RTCPeerConnection();
+    voicePeer = connection;
+    connection.addEventListener("track", (event) => {
+      voiceAudio.srcObject = new MediaStream([event.track]);
+      voiceAudio.play().catch(() => {
+        voiceStatus.textContent = "Touchez l’écran pour entendre le tuteur.";
+      });
+    });
+    voiceMicrophone = await navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    for (const track of voiceMicrophone.getAudioTracks()) connection.addTrack(track, voiceMicrophone);
+
+    voiceEvents = connection.createDataChannel("oai-events");
+    voiceEvents.addEventListener("message", ({ data }) => {
+      const event = JSON.parse(data);
+      if (event.type === "session.started") {
+        voiceConnecting = false;
+        voiceActive = true;
+        voiceStartedAt = Date.now();
+        endVoiceButton.disabled = false;
+        voiceStatus.textContent = "Je t’écoute… commence à parler.";
+        voiceOrb.classList.add("listening");
+        updateVoiceTimer();
+        voiceTimerInterval = setInterval(updateVoiceTimer, 1_000);
+        voiceLimitTimeout = setTimeout(endVoiceConversation, 20 * 60_000);
+      } else if (event.type === "session.closed") {
+        cleanupVoice("Conversation terminée.");
+      } else if (event.type === "error" || event.type === "session.error") {
+        cleanupVoice(event.message || "La conversation a rencontré un problème.");
+      }
+    });
+    voiceEvents.addEventListener("close", () => {
+      if (voiceActive || voiceConnecting) cleanupVoice("La conversation a été interrompue.");
+    });
+
+    const offer = await connection.createOffer();
+    await connection.setLocalDescription(offer);
+    await waitForIce(connection);
+    const response = await fetch("/api/live/session", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sdp: connection.localDescription?.sdp, context: lastCorrectionContext }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.message || result.error?.message || "Connexion Live impossible.");
+    await connection.setRemoteDescription({ type: "answer", sdp: result.transport.sdp });
+    voiceStatus.textContent = "Connexion au tuteur…";
+  } catch (error) {
+    cleanupVoice(error.name === "NotAllowedError" ? "Le microphone n’a pas été autorisé." : error.message || "Connexion Live impossible.");
+  }
+}
+
 voiceButton.addEventListener("click", () => {
-  resultTitle.textContent = "Conversation vocale";
-  resultText.textContent = "Le mode Live demande une connexion vocale distincte. Il sera activable ici dès qu’une clé vocale aura été configurée sur le Mac. La connexion ChatGPT actuelle ne donne pas accès au micro temps réel.";
-  issueList.hidden = true;
-  resultDialog.showModal();
+  if (voiceActive || voiceConnecting) {
+    if (!voiceDialog.open) voiceDialog.showModal();
+  } else {
+    startVoiceConversation();
+  }
+});
+endVoiceButton.addEventListener("click", endVoiceConversation);
+closeVoiceButton.addEventListener("click", () => {
+  if (voiceActive) endVoiceConversation();
+  else if (voiceConnecting) cleanupVoice("Connexion annulée.");
+  voiceDialog.close();
+});
+voiceDialog.addEventListener("cancel", (event) => {
+  if (!voiceActive) return;
+  event.preventDefault();
+  endVoiceConversation();
+});
+window.addEventListener("pagehide", () => {
+  if (voiceActive) endVoiceConversation();
 });
 
 closeDialogButton.addEventListener("click", () => resultDialog.close());
