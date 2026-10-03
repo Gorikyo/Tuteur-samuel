@@ -120,6 +120,7 @@ canvas:focus-visible {
 }
 
 .tool-button,
+.voice-button,
 .verify-button,
 .empty-action,
 .result-dialog button {
@@ -133,6 +134,7 @@ canvas:focus-visible {
 }
 
 .tool-button:active:not(:disabled),
+.voice-button:active:not(:disabled),
 .verify-button:active:not(:disabled),
 .empty-action:active { transform: scale(0.98); }
 
@@ -148,6 +150,7 @@ canvas:focus-visible {
 
 .tool-button.primary { color: white; background: var(--navy); }
 .tool-button[aria-pressed="true"] { color: white; background: var(--navy-2); box-shadow: inset 0 0 0 2px rgba(255,255,255,.25); }
+.stylus-button[aria-pressed="true"] { background: #317a63; }
 .tool-button:disabled, .verify-button:disabled { opacity: 0.42; cursor: default; }
 .tool-icon { font-size: 1.25rem; line-height: 1; }
 .tool-spacer { flex: 1; }
@@ -159,6 +162,16 @@ canvas:focus-visible {
   box-shadow: 0 7px 18px rgba(231, 103, 77, 0.28);
 }
 .verify-button:hover:not(:disabled) { background: var(--accent-dark); }
+.voice-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 16px;
+  color: var(--navy);
+  background: #e8f2f7;
+}
+.voice-button span { color: #d85047; font-size: .7rem; }
 
 .paper-area {
   min-height: 0;
@@ -206,6 +219,22 @@ canvas:focus-visible {
 .canvas-wrap canvas { display: block; width: 100%; height: auto; }
 #drawingCanvas { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
 #drawingCanvas.erasing { cursor: cell; }
+.marker-layer { position: absolute; inset: 0; pointer-events: none; }
+.issue-marker {
+  position: absolute;
+  width: clamp(34px, 5vw, 48px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border: 3px solid white;
+  border-radius: 50%;
+  color: white;
+  background: var(--accent);
+  box-shadow: 0 4px 14px rgba(112, 36, 25, .38);
+  font-weight: 850;
+  pointer-events: auto;
+  cursor: pointer;
+  animation: marker-in 240ms ease-out both;
+}
 
 .result-dialog {
   width: min(calc(100% - 36px), 520px);
@@ -222,6 +251,14 @@ canvas:focus-visible {
 .result-dialog h2 { margin: 2px 0 6px; font-size: 1.4rem; }
 .result-dialog p { margin: 0; color: var(--muted); line-height: 1.55; white-space: pre-line; }
 .result-dialog button { width: 100%; margin-top: 22px; color: white; background: var(--navy); }
+.issue-list { margin: 20px 0 0; padding: 0; display: grid; gap: 10px; list-style: none; }
+.issue-list li { display: flex; gap: 11px; padding: 12px; border-radius: 14px; background: #fff3ef; outline: none; }
+.issue-list li:focus { box-shadow: 0 0 0 3px #f0a08f; }
+.issue-list li > span { flex: 0 0 auto; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; color: white; background: var(--accent); font-weight: 850; }
+.issue-list strong { display: block; margin: 1px 0 3px; }
+.issue-list p { font-size: .94rem; }
+.issue-list .next-action { background: #eaf6f0; }
+.issue-list .next-action > span { background: #36946b; }
 
 .settings-dialog {
   width: min(calc(100% - 36px), 480px);
@@ -254,6 +291,7 @@ canvas:focus-visible {
 .disconnect-button { min-height: 44px; padding: 0 18px; border: 0; border-radius: 12px; color: #a03e32; background: #fff0ed; font-weight: 700; cursor: pointer; }
 
 @keyframes pulse { 50% { transform: scale(1.35); opacity: 0.6; } }
+@keyframes marker-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.55); } }
 
 @media (max-width: 720px) {
   .app-shell { padding: 10px; gap: 10px; }
@@ -263,6 +301,8 @@ canvas:focus-visible {
   .toolbar { display: grid; grid-template-columns: 1.35fr 1fr 1fr; }
   .tool-button { padding: 0 10px; font-size: 0.88rem; }
   .tool-spacer { display: none; }
+  .stylus-button { grid-column: span 2; }
+  .voice-button { grid-column: span 1; }
   .verify-button { grid-column: 1 / -1; }
   .paper-area { padding: 12px; }
 }

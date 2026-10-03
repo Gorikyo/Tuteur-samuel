@@ -3,15 +3,19 @@ const loadButton = document.querySelector("#loadButton");
 const emptyLoadButton = document.querySelector("#emptyLoadButton");
 const undoButton = document.querySelector("#undoButton");
 const eraseButton = document.querySelector("#eraseButton");
+const stylusButton = document.querySelector("#stylusButton");
+const voiceButton = document.querySelector("#voiceButton");
 const verifyButton = document.querySelector("#verifyButton");
 const emptyState = document.querySelector("#emptyState");
 const canvasWrap = document.querySelector("#canvasWrap");
 const photoCanvas = document.querySelector("#photoCanvas");
 const drawingCanvas = document.querySelector("#drawingCanvas");
+const markerLayer = document.querySelector("#markerLayer");
 const status = document.querySelector("#status");
 const resultDialog = document.querySelector("#resultDialog");
 const resultTitle = document.querySelector("#resultTitle");
 const resultText = document.querySelector("#resultText");
+const issueList = document.querySelector("#issueList");
 const closeDialogButton = document.querySelector("#closeDialogButton");
 const connectionButton = document.querySelector("#connectionButton");
 const settingsDialog = document.querySelector("#settingsDialog");
@@ -29,6 +33,9 @@ let strokes = [];
 let currentStroke = null;
 let erasing = false;
 let hasPhoto = false;
+let stylusOnly = true;
+let activePointerId = null;
+let correctionIssues = [];
 let configuration = { authConnected: false, provider: "none" };
 
 function setStatus(message, busy = false) {
@@ -65,6 +72,8 @@ imageInput.addEventListener("change", async () => {
     bitmap.close();
 
     strokes = [];
+    correctionIssues = [];
+    renderIssueMarkers();
     hasPhoto = true;
     emptyState.hidden = true;
     canvasWrap.hidden = false;
@@ -124,8 +133,15 @@ function renderStrokes() {
 
 drawingCanvas.addEventListener("pointerdown", (event) => {
   if (!hasPhoto || (event.pointerType === "mouse" && event.button !== 0)) return;
+  if (stylusOnly && event.pointerType === "touch") {
+    event.preventDefault();
+    setStatus("Paume ignorée — écris avec le Pencil");
+    return;
+  }
+  if (currentStroke || activePointerId !== null) return;
   event.preventDefault();
   drawingCanvas.setPointerCapture(event.pointerId);
+  activePointerId = event.pointerId;
   currentStroke = {
     mode: erasing ? "erase" : "draw",
     points: [pointFromEvent(event)],
@@ -134,7 +150,7 @@ drawingCanvas.addEventListener("pointerdown", (event) => {
 });
 
 drawingCanvas.addEventListener("pointermove", (event) => {
-  if (!currentStroke || !drawingCanvas.hasPointerCapture(event.pointerId)) return;
+  if (!currentStroke || event.pointerId !== activePointerId || !drawingCanvas.hasPointerCapture(event.pointerId)) return;
   event.preventDefault();
   const events = event.getCoalescedEvents?.() ?? [event];
   for (const coalescedEvent of events) {
@@ -144,12 +160,13 @@ drawingCanvas.addEventListener("pointermove", (event) => {
 });
 
 function finishStroke(event) {
-  if (!currentStroke) return;
+  if (!currentStroke || event.pointerId !== activePointerId) return;
   if (drawingCanvas.hasPointerCapture(event.pointerId)) {
     drawingCanvas.releasePointerCapture(event.pointerId);
   }
   strokes.push(currentStroke);
   currentStroke = null;
+  activePointerId = null;
   renderStrokes();
   updateControls();
   setStatus(erasing ? "Gomme active" : "Écriture enregistrée");
@@ -172,6 +189,13 @@ eraseButton.addEventListener("click", () => {
   setStatus(erasing ? "Gomme active" : "Crayon actif");
 });
 
+stylusButton.addEventListener("click", () => {
+  stylusOnly = !stylusOnly;
+  stylusButton.setAttribute("aria-pressed", String(stylusOnly));
+  stylusButton.lastChild.textContent = stylusOnly ? " Stylet seul" : " Doigt autorisé";
+  setStatus(stylusOnly ? "Rejet de la paume actif" : "Écriture au doigt active");
+});
+
 function updateControls() {
   undoButton.disabled = strokes.length === 0;
   eraseButton.disabled = !hasPhoto;
@@ -186,6 +210,50 @@ function exportComposite() {
   context.drawImage(photoCanvas, 0, 0);
   context.drawImage(drawingCanvas, 0, 0);
   return exportCanvas.toDataURL("image/jpeg", 0.9);
+}
+
+function renderIssueMarkers() {
+  markerLayer.replaceChildren();
+  correctionIssues.forEach((issue) => {
+    const marker = document.createElement("button");
+    marker.type = "button";
+    marker.className = "issue-marker";
+    marker.textContent = issue.id;
+    marker.style.left = `${(issue.x / 999) * 100}%`;
+    marker.style.top = `${(issue.y / 999) * 100}%`;
+    marker.setAttribute("aria-label", `${issue.title} : ${issue.hint}`);
+    marker.addEventListener("click", () => {
+      resultDialog.showModal();
+      requestAnimationFrame(() => document.querySelector(`[data-issue-id="${issue.id}"]`)?.focus());
+    });
+    markerLayer.append(marker);
+  });
+}
+
+function showCorrection(result) {
+  correctionIssues = Array.isArray(result.issues) ? result.issues : [];
+  renderIssueMarkers();
+  resultTitle.textContent = ["chatgpt", "api-key"].includes(result.mode) ? "Voici mon conseil" : "Connexion presque prête";
+  resultText.textContent = result.summary || result.message;
+  issueList.replaceChildren();
+  correctionIssues.forEach((issue) => {
+    const item = document.createElement("li");
+    item.dataset.issueId = issue.id;
+    item.tabIndex = -1;
+    item.innerHTML = `<span>${issue.id}</span><div><strong></strong><p></p></div>`;
+    item.querySelector("strong").textContent = issue.title;
+    item.querySelector("p").textContent = issue.hint;
+    issueList.append(item);
+  });
+  if (result.nextAction) {
+    const item = document.createElement("li");
+    item.className = "next-action";
+    item.innerHTML = "<span>→</span><div><strong>À toi de jouer</strong><p></p></div>";
+    item.querySelector("p").textContent = result.nextAction;
+    issueList.append(item);
+  }
+  issueList.hidden = issueList.children.length === 0;
+  resultDialog.showModal();
 }
 
 verifyButton.addEventListener("click", async () => {
@@ -204,18 +272,25 @@ verifyButton.addEventListener("click", async () => {
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.message || "Erreur de vérification");
-    resultTitle.textContent = ["chatgpt", "api-key"].includes(result.mode) ? "Voici mon conseil" : "Connexion presque prête";
-    resultText.textContent = result.message;
-    resultDialog.showModal();
+    showCorrection(result);
     setStatus("Devoir prêt");
   } catch (error) {
+    resultTitle.textContent = "Vérification indisponible";
     resultText.textContent = "La feuille est prête, mais le service de vérification n’a pas répondu. Tu peux continuer à écrire et réessayer.";
+    issueList.hidden = true;
     resultDialog.showModal();
     setStatus("Vérification indisponible");
     console.error(error);
   } finally {
     verifyButton.disabled = false;
   }
+});
+
+voiceButton.addEventListener("click", () => {
+  resultTitle.textContent = "Conversation vocale";
+  resultText.textContent = "Le mode Live demande une connexion vocale distincte. Il sera activable ici dès qu’une clé vocale aura été configurée sur le Mac. La connexion ChatGPT actuelle ne donne pas accès au micro temps réel.";
+  issueList.hidden = true;
+  resultDialog.showModal();
 });
 
 closeDialogButton.addEventListener("click", () => resultDialog.close());
@@ -234,10 +309,10 @@ async function loadModels() {
     for (const model of result.models || []) {
       const option = document.createElement("option");
       option.value = model.slug;
-      option.textContent = model.displayName;
+      option.textContent = model.slug === result.selected ? `${model.displayName} — recommandé` : model.displayName;
       modelSelect.append(option);
     }
-    const remembered = localStorage.getItem("tuteur-samuel-model");
+    const remembered = localStorage.getItem("tuteur-samuel-analysis-model");
     if (remembered && [...modelSelect.options].some((option) => option.value === remembered)) {
       modelSelect.value = remembered;
     } else if (result.selected) {
@@ -274,7 +349,7 @@ async function loadConfiguration() {
   }
 }
 
-modelSelect.addEventListener("change", () => localStorage.setItem("tuteur-samuel-model", modelSelect.value));
+modelSelect.addEventListener("change", () => localStorage.setItem("tuteur-samuel-analysis-model", modelSelect.value));
 connectionButton.addEventListener("click", () => settingsDialog.showModal());
 closeSettingsButton.addEventListener("click", () => settingsDialog.close());
 settingsDialog.addEventListener("click", (event) => {
@@ -283,7 +358,7 @@ settingsDialog.addEventListener("click", (event) => {
 disconnectButton.addEventListener("click", async () => {
   disconnectButton.disabled = true;
   await fetch("/auth/openai/logout", { method: "POST" });
-  localStorage.removeItem("tuteur-samuel-model");
+  localStorage.removeItem("tuteur-samuel-analysis-model");
   settingsDialog.close();
   await loadConfiguration();
   disconnectButton.disabled = false;

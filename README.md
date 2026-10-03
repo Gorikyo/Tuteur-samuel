@@ -7,9 +7,11 @@ Prototype local pensé pour un iPad Pro et l’Apple Pencil.
 - charger ou photographier une feuille de devoir ;
 - afficher la feuille en grand ;
 - écrire dessus au doigt, à la souris ou avec l’Apple Pencil ;
+- utiliser le mode « Stylet seul » pour ignorer la paume et les doigts ;
 - annuler le dernier geste ;
 - activer la gomme ;
-- réunir la photo et les annotations avec « Vérifie-moi ».
+- réunir la photo et les annotations avec « Vérifie-moi » ;
+- afficher des bulles numérotées sur les points à revoir.
 
 La correction peut utiliser directement un abonnement ChatGPT compatible grâce à la connexion officielle OpenAI. Les modèles disponibles sont proposés dans l’application. Les jetons de connexion restent sur le Mac et ne sont jamais exposés dans le navigateur ou GitHub.
 
@@ -40,6 +42,12 @@ Pour utiliser ChatGPT sur l’iPad, effectuer d’abord la connexion ChatGPT une
 4. Choisir le modèle dans « Réglages IA ».
 
 La connexion est enregistrée uniquement sur ce Mac dans `~/.config/tuteur-samuel`.
+
+Le modèle d’analyse recommandé est sélectionné automatiquement lorsqu’il est disponible. La correction utilise l’image en qualité originale et demande des coordonnées pour placer les bulles.
+
+## Conversation vocale
+
+Le bouton « Parler » prépare l’accès au futur mode Live. L’OAuth ChatGPT utilisé par l’application autorise actuellement les requêtes Responses, mais pas l’audio temps réel. Un vrai dialogue vocal demandera donc une clé API vocale conservée uniquement sur le Mac.
 
 ## Solution de secours : clé API
 

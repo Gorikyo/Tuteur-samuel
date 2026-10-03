@@ -50,7 +50,15 @@
             <span class="tool-icon" aria-hidden="true">⌫</span>
             Effacer
           </button>
+          <button class="tool-button stylus-button" id="stylusButton" type="button" aria-pressed="true">
+            <span class="tool-icon" aria-hidden="true">✎</span>
+            Stylet seul
+          </button>
           <div class="tool-spacer"></div>
+          <button class="voice-button" id="voiceButton" type="button">
+            <span aria-hidden="true">●</span>
+            Parler
+          </button>
           <button class="verify-button" id="verifyButton" type="button" disabled>
             Vérifie-moi
           </button>
@@ -73,6 +81,7 @@
               aria-label="Zone d’écriture sur le devoir"
               role="img"
             ></canvas>
+            <div class="marker-layer" id="markerLayer" aria-label="Points à revoir"></div>
           </div>
         </div>
       </section>
@@ -84,6 +93,7 @@
         <div>
           <h2 id="resultTitle">Devoir préparé</h2>
           <p id="resultText"></p>
+          <ol class="issue-list" id="issueList" hidden></ol>
         </div>
       </div>
       <button id="closeDialogButton" type="button">Continuer</button>

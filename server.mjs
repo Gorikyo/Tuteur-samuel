@@ -20,10 +20,24 @@ const pending = new Map();
 let modelCache = { until: 0, models: [] };
 
 const correctionPrompt = `Tu es Tuteur Samuel, un tuteur scolaire patient pour un enfant.
-Analyse la photo de la feuille de devoir, y compris les annotations manuscrites ajoutées par l'enfant.
-Réponds uniquement en français, avec un ton encourageant et des phrases courtes.
-Dis ce qui semble correct. Signale au maximum trois points à revoir. Donne un indice pour chaque erreur sans révéler immédiatement toute la réponse. Termine par une prochaine action très simple.
-Si la photo n'est pas lisible ou ne montre pas un devoir, explique-le clairement sans inventer.`;
+Analyse très attentivement la photo de la feuille, y compris l'énoncé imprimé et les réponses ou annotations manuscrites.
+Vérifie le raisonnement avant de signaler une faute. Ne corrige pas un élément ambigu ou illisible : indique plutôt qu'il faut le relire.
+
+Retourne exclusivement un objet JSON valide, sans markdown, sous cette forme :
+{
+  "summary": "une phrase encourageante sur ce qui est compris ou réussi",
+  "issues": [
+    {
+      "title": "titre très court du point à revoir",
+      "hint": "indice bref qui aide sans donner immédiatement toute la réponse",
+      "x": 500,
+      "y": 500
+    }
+  ],
+  "next_action": "une prochaine action très simple"
+}
+
+Signale au maximum quatre points. x et y désignent le centre de la faute sur une grille fixe de 0 à 999, origine en haut à gauche. Si la copie est correcte, renvoie issues vide. Si la photo n'est pas exploitable, explique-le dans summary et renvoie issues vide. Réponds uniquement en français.`;
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8", ".css": "text/css; charset=utf-8",
@@ -154,6 +168,30 @@ function outputText(response) {
     .filter((part) => part.type === "output_text").map((part) => part.text).join("\n").trim();
 }
 
+function preferredModel(models) {
+  const priorities = ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.5", "gpt-5.6-luna"];
+  return priorities.find((slug) => models.some((model) => model.slug === slug)) || models[0]?.slug;
+}
+
+function structuredCorrection(rawMessage) {
+  const cleaned = rawMessage.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    const parsed = JSON.parse(cleaned);
+    const issues = Array.isArray(parsed.issues) ? parsed.issues.slice(0, 4).map((issue, index) => ({
+      id: index + 1,
+      title: String(issue.title || `Point ${index + 1}`).slice(0, 90),
+      hint: String(issue.hint || "Relis cette partie.").slice(0, 320),
+      x: Math.max(0, Math.min(999, Number(issue.x) || 500)),
+      y: Math.max(0, Math.min(999, Number(issue.y) || 500)),
+    })) : [];
+    const summary = String(parsed.summary || "J’ai terminé la vérification.").slice(0, 600);
+    const nextAction = String(parsed.next_action || "Relis les points indiqués.").slice(0, 300);
+    return { summary, issues, nextAction, message: `${summary}\n\n${nextAction}` };
+  } catch {
+    return { summary: rawMessage, issues: [], nextAction: "Relis la correction puis essaie à nouveau.", message: rawMessage };
+  }
+}
+
 async function streamText(response) {
   const reader = response.body?.getReader();
   if (!reader) throw new Error("Flux de correction indisponible.");
@@ -192,16 +230,17 @@ async function streamText(response) {
 
 async function oauthCorrection(image, requestedModel, auth) {
   const models = await listModels(auth);
-  const model = models.find((item) => item.slug === requestedModel)?.slug || models[0]?.slug;
+  const model = models.find((item) => item.slug === requestedModel)?.slug || preferredModel(models);
   if (!model) throw new Error("Aucun modèle ChatGPT compatible n’est disponible.");
   const response = await fetch(`${resource}/responses`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.access_token}` },
     body: JSON.stringify({
       model, store: false, stream: true, instructions: correctionPrompt,
+      reasoning: { effort: "high" },
       input: [{ role: "user", content: [
         { type: "input_text", text: "Analyse cette feuille et aide l’enfant à corriger son travail." },
-        { type: "input_image", image_url: image, detail: "high" },
+          { type: "input_image", image_url: image, detail: "original" },
       ] }],
     }),
   });
@@ -211,7 +250,7 @@ async function oauthCorrection(image, requestedModel, auth) {
     error.status = response.status;
     throw error;
   }
-  return { message: await streamText(response), model };
+  return { ...structuredCorrection(await streamText(response)), model };
 }
 
 async function keyCorrection(image) {
@@ -219,10 +258,10 @@ async function keyCorrection(image) {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${process.env.OPENAI_API_KEY}` },
     body: JSON.stringify({
-      model: apiModel, store: false, reasoning: { effort: "low" }, max_output_tokens: 700,
+      model: apiModel, store: false, reasoning: { effort: "high" }, max_output_tokens: 1000,
       input: [{ role: "user", content: [
         { type: "input_text", text: correctionPrompt },
-        { type: "input_image", image_url: image, detail: "high" },
+        { type: "input_image", image_url: image, detail: "original" },
       ] }],
     }),
   });
@@ -234,7 +273,7 @@ async function keyCorrection(image) {
   }
   const message = outputText(result);
   if (!message) throw new Error("La correction reçue était vide.");
-  return { message, model: apiModel };
+  return { ...structuredCorrection(message), model: apiModel };
 }
 
 async function startOAuth(response) {
@@ -314,7 +353,7 @@ const server = createServer(async (request, response) => {
       const auth = await validAuth();
       if (!auth) return json(response, 200, { models: [], selected: null });
       const models = await listModels(auth);
-      return json(response, 200, { models, selected: models[0]?.slug || null });
+      return json(response, 200, { models, selected: preferredModel(models) || null });
     }
   } catch (error) {
     if (url.pathname.startsWith("/auth/openai/")) return redirect(response, `/?auth_error=${encodeURIComponent(error.message || "Connexion impossible")}`);
