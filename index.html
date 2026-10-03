@@ -26,9 +26,12 @@
             <small>Mon espace de devoir</small>
           </span>
         </div>
-        <div class="status" id="status" role="status" aria-live="polite">
-          <span class="status-dot" aria-hidden="true"></span>
-          Prêt
+        <div class="topbar-actions">
+          <div class="status" id="status" role="status" aria-live="polite">
+            <span class="status-dot" aria-hidden="true"></span>
+            Prêt
+          </div>
+          <button class="connection-button" id="connectionButton" type="button">Connecter ChatGPT</button>
         </div>
       </header>
 
@@ -84,6 +87,26 @@
         </div>
       </div>
       <button id="closeDialogButton" type="button">Continuer</button>
+    </dialog>
+
+    <dialog class="settings-dialog" id="settingsDialog">
+      <button class="dialog-close" id="closeSettingsButton" type="button" aria-label="Fermer">×</button>
+      <div id="signedOutSettings">
+        <span class="ai-mark" aria-hidden="true">✦</span>
+        <h2>Correction avec ChatGPT</h2>
+        <p>Utilise ton abonnement ChatGPT pour vérifier les devoirs, sans copier de clé.</p>
+        <a class="chatgpt-button" href="/auth/openai/start">Continuer avec ChatGPT</a>
+        <small>La connexion se fait sur la page officielle OpenAI.</small>
+      </div>
+      <div id="signedInSettings" hidden>
+        <span class="ai-mark connected" aria-hidden="true">✓</span>
+        <h2>ChatGPT est connecté</h2>
+        <p id="connectedAccount"></p>
+        <label for="modelSelect">Modèle pour la correction</label>
+        <select id="modelSelect"><option>Chargement…</option></select>
+        <p class="model-help">Tu peux changer de modèle à tout moment.</p>
+        <button class="disconnect-button" id="disconnectButton" type="button">Se déconnecter</button>
+      </div>
     </dialog>
 
     <script type="module" src="app.js"></script>

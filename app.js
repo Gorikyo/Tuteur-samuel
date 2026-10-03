@@ -13,6 +13,14 @@ const resultDialog = document.querySelector("#resultDialog");
 const resultTitle = document.querySelector("#resultTitle");
 const resultText = document.querySelector("#resultText");
 const closeDialogButton = document.querySelector("#closeDialogButton");
+const connectionButton = document.querySelector("#connectionButton");
+const settingsDialog = document.querySelector("#settingsDialog");
+const closeSettingsButton = document.querySelector("#closeSettingsButton");
+const signedOutSettings = document.querySelector("#signedOutSettings");
+const signedInSettings = document.querySelector("#signedInSettings");
+const connectedAccount = document.querySelector("#connectedAccount");
+const modelSelect = document.querySelector("#modelSelect");
+const disconnectButton = document.querySelector("#disconnectButton");
 
 const photoContext = photoCanvas.getContext("2d");
 const drawingContext = drawingCanvas.getContext("2d");
@@ -21,6 +29,7 @@ let strokes = [];
 let currentStroke = null;
 let erasing = false;
 let hasPhoto = false;
+let configuration = { authConnected: false, provider: "none" };
 
 function setStatus(message, busy = false) {
   status.lastChild.textContent = ` ${message}`;
@@ -190,11 +199,12 @@ verifyButton.addEventListener("click", async () => {
       body: JSON.stringify({
         image: exportComposite(),
         annotationCount: strokes.length,
+        model: modelSelect.value || undefined,
       }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.message || "Erreur de vérification");
-    resultTitle.textContent = result.mode === "openai" ? "Voici mon conseil" : "Connexion presque prête";
+    resultTitle.textContent = ["chatgpt", "api-key"].includes(result.mode) ? "Voici mon conseil" : "Connexion presque prête";
     resultText.textContent = result.message;
     resultDialog.showModal();
     setStatus("Devoir prêt");
@@ -215,9 +225,80 @@ resultDialog.addEventListener("click", (event) => {
 
 updateControls();
 
-fetch("/api/status")
-  .then((response) => response.json())
-  .then((configuration) => {
-    setStatus(configuration.aiConfigured ? "IA connectée" : "Mode prototype");
-  })
-  .catch(() => setStatus("Prêt"));
+async function loadModels() {
+  modelSelect.innerHTML = '<option value="">Chargement…</option>';
+  try {
+    const response = await fetch("/api/models");
+    const result = await response.json();
+    modelSelect.innerHTML = "";
+    for (const model of result.models || []) {
+      const option = document.createElement("option");
+      option.value = model.slug;
+      option.textContent = model.displayName;
+      modelSelect.append(option);
+    }
+    const remembered = localStorage.getItem("tuteur-samuel-model");
+    if (remembered && [...modelSelect.options].some((option) => option.value === remembered)) {
+      modelSelect.value = remembered;
+    } else if (result.selected) {
+      modelSelect.value = result.selected;
+    }
+    if (!modelSelect.options.length) {
+      modelSelect.add(new Option("Aucun modèle disponible", ""));
+    }
+  } catch {
+    modelSelect.innerHTML = '<option value="">Modèles indisponibles</option>';
+  }
+}
+
+async function loadConfiguration() {
+  try {
+    const response = await fetch("/api/status");
+    configuration = await response.json();
+    signedOutSettings.hidden = configuration.authConnected;
+    signedInSettings.hidden = !configuration.authConnected;
+    if (configuration.authConnected) {
+      connectionButton.textContent = configuration.name || "ChatGPT connecté";
+      connectedAccount.textContent = configuration.email || "Ton abonnement ChatGPT est prêt.";
+      setStatus("ChatGPT connecté");
+      await loadModels();
+    } else if (configuration.provider === "api-key") {
+      connectionButton.textContent = "Réglages IA";
+      setStatus("IA connectée");
+    } else {
+      connectionButton.textContent = "Connecter ChatGPT";
+      setStatus("Mode prototype");
+    }
+  } catch {
+    setStatus("Prêt");
+  }
+}
+
+modelSelect.addEventListener("change", () => localStorage.setItem("tuteur-samuel-model", modelSelect.value));
+connectionButton.addEventListener("click", () => settingsDialog.showModal());
+closeSettingsButton.addEventListener("click", () => settingsDialog.close());
+settingsDialog.addEventListener("click", (event) => {
+  if (event.target === settingsDialog) settingsDialog.close();
+});
+disconnectButton.addEventListener("click", async () => {
+  disconnectButton.disabled = true;
+  await fetch("/auth/openai/logout", { method: "POST" });
+  localStorage.removeItem("tuteur-samuel-model");
+  settingsDialog.close();
+  await loadConfiguration();
+  disconnectButton.disabled = false;
+});
+
+const pageParameters = new URLSearchParams(location.search);
+if (pageParameters.has("connected")) {
+  history.replaceState({}, "", location.pathname);
+  setTimeout(() => settingsDialog.showModal(), 100);
+}
+if (pageParameters.has("auth_error")) {
+  history.replaceState({}, "", location.pathname);
+  resultTitle.textContent = "Connexion non terminée";
+  resultText.textContent = pageParameters.get("auth_error");
+  setTimeout(() => resultDialog.showModal(), 150);
+}
+
+loadConfiguration();

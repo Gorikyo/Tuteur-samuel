@@ -11,7 +11,7 @@ Prototype local pensé pour un iPad Pro et l’Apple Pencil.
 - activer la gomme ;
 - réunir la photo et les annotations avec « Vérifie-moi ».
 
-La correction utilise l’API OpenAI Responses avec un modèle capable de lire les images. L’appel est effectué uniquement côté serveur : aucune clé API n’est exposée dans le navigateur. Sans clé configurée, l’application reste utilisable en mode prototype.
+La correction peut utiliser directement un abonnement ChatGPT compatible grâce à la connexion officielle OpenAI. Les modèles disponibles sont proposés dans l’application. Les jetons de connexion restent sur le Mac et ne sont jamais exposés dans le navigateur ou GitHub.
 
 ## Lancer le prototype sur Mac
 
@@ -26,10 +26,19 @@ npm start
 
 Puis ouvrir <http://127.0.0.1:4173>.
 
-## Activer la correction par IA
+## Connecter ChatGPT
+
+1. Ouvrir l’application.
+2. Cliquer sur « Connecter ChatGPT ».
+3. Autoriser Tuteur Samuel sur la page officielle OpenAI.
+4. Choisir le modèle dans « Réglages IA ».
+
+La connexion est enregistrée uniquement sur ce Mac dans `~/.config/tuteur-samuel`.
+
+## Solution de secours : clé API
 
 1. Double-cliquer sur `Configurer OpenAI.command`.
 2. Coller une clé API OpenAI lorsque le Mac la demande.
 3. Relancer `Lancer Tuteur Samuel.command`.
 
-La clé est enregistrée localement dans `.env`, un fichier ignoré par Git. Le modèle utilisé par défaut est `gpt-6-luna` et peut être remplacé avec `OPENAI_MODEL`.
+La clé est enregistrée localement dans `.env`, un fichier ignoré par Git. Elle n’est utilisée que si ChatGPT n’est pas connecté. Le modèle utilisé par défaut est `gpt-6-luna` et peut être remplacé avec `OPENAI_MODEL`.
