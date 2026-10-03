@@ -1,0 +1,11 @@
+{
+  "name": "tuteur-samuel",
+  "version": "0.3.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "check": "node --check app.js && node --check server.mjs"
+  }
+}
+
