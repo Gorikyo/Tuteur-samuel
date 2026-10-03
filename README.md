@@ -26,6 +26,12 @@ npm start
 
 Puis ouvrir <http://127.0.0.1:4173>.
 
+### Essayer sur un iPad
+
+L’iPad et le Mac doivent être connectés au même Wi‑Fi, et Tuteur Samuel doit rester lancé sur le Mac. Ouvrir ensuite dans Safari l’adresse locale du Mac suivie de `:4173` (par exemple `http://192.168.0.36:4173`). L’adresse peut changer lorsque le Mac rejoint un autre réseau.
+
+Pour utiliser ChatGPT sur l’iPad, effectuer d’abord la connexion ChatGPT une fois sur le Mac.
+
 ## Connecter ChatGPT
 
 1. Ouvrir l’application.

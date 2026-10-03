@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 4173);
+const host = process.env.HOST || "0.0.0.0";
 const apiModel = process.env.OPENAI_MODEL || "gpt-6-luna";
 const configDir = process.env.TUTEUR_CONFIG_DIR || join(homedir(), ".config", "tuteur-samuel");
 const authFile = join(configDir, "chatgpt-auth.json");
@@ -330,4 +331,4 @@ const server = createServer(async (request, response) => {
   } catch { json(response, 404, { message: "Page introuvable" }); }
 });
 
-server.listen(port, "127.0.0.1", () => console.log(`Tuteur Samuel est disponible sur http://127.0.0.1:${port}`));
+server.listen(port, host, () => console.log(`Tuteur Samuel est disponible sur http://127.0.0.1:${port}`));
