@@ -42,7 +42,7 @@ const endVoiceButton = document.querySelector("#endVoiceButton");
 const voiceHelp = document.querySelector("#voiceHelp");
 
 const photoContext = photoCanvas.getContext("2d");
-const drawingContext = drawingCanvas.getContext("2d");
+const drawingContext = drawingCanvas.getContext("2d", { alpha: true, desynchronized: true });
 
 let strokes = [];
 let currentStroke = null;
@@ -50,6 +50,7 @@ let erasing = false;
 let hasPhoto = false;
 let stylusOnly = true;
 let activePointerId = null;
+let pointerMetrics = null;
 let correctionIssues = [];
 let lastCorrectionContext = "";
 let lastCorrectionResult = null;
@@ -263,70 +264,72 @@ imageInput.addEventListener("change", async () => {
   }
 });
 
-function pointFromEvent(event) {
+function canvasPointerMetrics() {
   const rect = drawingCanvas.getBoundingClientRect();
   return {
-    x: (event.clientX - rect.left) * (drawingCanvas.width / rect.width),
-    y: (event.clientY - rect.top) * (drawingCanvas.height / rect.height),
+    left: rect.left,
+    top: rect.top,
+    scaleX: drawingCanvas.width / rect.width,
+    scaleY: drawingCanvas.height / rect.height,
+  };
+}
+
+function pointFromEvent(event, metrics = pointerMetrics || canvasPointerMetrics()) {
+  return {
+    x: (event.clientX - metrics.left) * metrics.scaleX,
+    y: (event.clientY - metrics.top) * metrics.scaleY,
     pressure: event.pressure > 0 ? event.pressure : 0.5,
   };
 }
 
-function drawStroke(context, stroke) {
+function drawStrokeRange(context, stroke, startIndex = 0) {
   if (!stroke.points.length) return;
-  context.save();
-  context.globalCompositeOperation = stroke.mode === "erase" ? "destination-out" : "source-over";
-  context.strokeStyle = "#174f7a";
-  context.lineCap = "round";
-  context.lineJoin = "round";
-
-  if (stroke.points.length === 1) {
-    const point = stroke.points[0];
-    context.beginPath();
-    context.arc(point.x, point.y, stroke.mode === "erase" ? 18 : 3, 0, Math.PI * 2);
-    context.fillStyle = context.strokeStyle;
-    context.fill();
-  } else {
-    for (let index = 1; index < stroke.points.length; index += 1) {
-      const previous = stroke.points[index - 1];
-      const point = stroke.points[index];
-      context.beginPath();
-      context.moveTo(previous.x, previous.y);
-      context.lineTo(point.x, point.y);
-      context.lineWidth = stroke.mode === "erase" ? 42 : 4 + point.pressure * 5;
-      context.stroke();
-    }
-  }
-  context.restore();
-}
-
-function drawLatestStrokePart(context, stroke) {
-  const pointCount = stroke.points.length;
-  if (!pointCount) return;
-
-  const point = stroke.points[pointCount - 1];
-  const previous = stroke.points[Math.max(0, pointCount - 2)];
-
   context.save();
   context.globalCompositeOperation = stroke.mode === "erase" ? "destination-out" : "source-over";
   context.strokeStyle = "#174f7a";
   context.fillStyle = context.strokeStyle;
   context.lineCap = "round";
   context.lineJoin = "round";
+  context.lineWidth = stroke.mode === "erase" ? 42 : 6.5;
 
-  if (pointCount === 1) {
+  if (stroke.points.length === 1 && startIndex === 0) {
+    const point = stroke.points[0];
     context.beginPath();
     context.arc(point.x, point.y, stroke.mode === "erase" ? 18 : 3, 0, Math.PI * 2);
     context.fill();
-  } else {
+  } else if (stroke.points.length > 1) {
+    const firstIndex = Math.max(1, startIndex);
+    const previous = stroke.points[firstIndex - 1];
     context.beginPath();
     context.moveTo(previous.x, previous.y);
-    context.lineTo(point.x, point.y);
-    context.lineWidth = stroke.mode === "erase" ? 42 : 4 + point.pressure * 5;
+    for (let index = firstIndex; index < stroke.points.length; index += 1) {
+      context.lineTo(stroke.points[index].x, stroke.points[index].y);
+    }
     context.stroke();
   }
-
   context.restore();
+}
+
+function drawStroke(context, stroke) {
+  drawStrokeRange(context, stroke, 0);
+}
+
+function appendPointerSamples(event, includeCoalesced = true) {
+  const startIndex = currentStroke.points.length;
+  const coalescedEvents = includeCoalesced ? event.getCoalescedEvents?.() : null;
+  const samples = coalescedEvents?.length ? coalescedEvents : [event];
+
+  for (const sample of samples) {
+    const point = pointFromEvent(sample);
+    const previous = currentStroke.points[currentStroke.points.length - 1];
+    if (!previous || Math.abs(point.x - previous.x) + Math.abs(point.y - previous.y) > 0.15) {
+      currentStroke.points.push(point);
+    }
+  }
+
+  if (currentStroke.points.length > startIndex) {
+    drawStrokeRange(drawingContext, currentStroke, startIndex);
+  }
 }
 
 function renderStrokes() {
@@ -339,40 +342,38 @@ drawingCanvas.addEventListener("pointerdown", (event) => {
   if (!hasPhoto || (event.pointerType === "mouse" && event.button !== 0)) return;
   if (stylusOnly && event.pointerType === "touch") {
     event.preventDefault();
-    setStatus("Paume ignorée — écris avec le Pencil");
     return;
   }
   if (currentStroke || activePointerId !== null) return;
   event.preventDefault();
-  drawingCanvas.setPointerCapture(event.pointerId);
+  try { drawingCanvas.setPointerCapture(event.pointerId); } catch { /* Safari peut refuser brièvement la capture. */ }
   activePointerId = event.pointerId;
+  pointerMetrics = canvasPointerMetrics();
   currentStroke = {
     mode: erasing ? "erase" : "draw",
     points: [pointFromEvent(event)],
   };
-  drawLatestStrokePart(drawingContext, currentStroke);
+  drawStrokeRange(drawingContext, currentStroke, 0);
 });
 
 drawingCanvas.addEventListener("pointermove", (event) => {
-  if (!currentStroke || event.pointerId !== activePointerId || !drawingCanvas.hasPointerCapture(event.pointerId)) return;
+  if (!currentStroke || event.pointerId !== activePointerId) return;
   event.preventDefault();
-  const events = event.getCoalescedEvents?.() ?? [event];
-  for (const coalescedEvent of events) {
-    currentStroke.points.push(pointFromEvent(coalescedEvent));
-    drawLatestStrokePart(drawingContext, currentStroke);
-  }
+  appendPointerSamples(event);
 });
 
 function finishStroke(event) {
   if (!currentStroke || event.pointerId !== activePointerId) return;
+  if (event.type === "pointerup") appendPointerSamples(event, false);
   if (drawingCanvas.hasPointerCapture(event.pointerId)) {
     drawingCanvas.releasePointerCapture(event.pointerId);
   }
+  const wasEmpty = strokes.length === 0;
   strokes.push(currentStroke);
   currentStroke = null;
   activePointerId = null;
-  updateControls();
-  setStatus(erasing ? "Gomme active" : "Écriture enregistrée");
+  pointerMetrics = null;
+  if (wasEmpty) updateControls();
 }
 
 drawingCanvas.addEventListener("pointerup", finishStroke);
