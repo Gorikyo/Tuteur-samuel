@@ -214,9 +214,22 @@ canvas:focus-visible {
   border-radius: 8px;
   box-shadow: 0 18px 40px rgba(22, 61, 92, 0.18);
   overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
-.canvas-wrap canvas { display: block; width: 100%; height: auto; }
+.canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
 #drawingCanvas { position: absolute; inset: 0; touch-action: none; cursor: crosshair; }
 #drawingCanvas.erasing { cursor: cell; }
 .marker-layer { position: absolute; inset: 0; pointer-events: none; }

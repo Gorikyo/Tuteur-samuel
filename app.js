@@ -143,6 +143,35 @@ function drawStroke(context, stroke) {
   context.restore();
 }
 
+function drawLatestStrokePart(context, stroke) {
+  const pointCount = stroke.points.length;
+  if (!pointCount) return;
+
+  const point = stroke.points[pointCount - 1];
+  const previous = stroke.points[Math.max(0, pointCount - 2)];
+
+  context.save();
+  context.globalCompositeOperation = stroke.mode === "erase" ? "destination-out" : "source-over";
+  context.strokeStyle = "#174f7a";
+  context.fillStyle = context.strokeStyle;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+
+  if (pointCount === 1) {
+    context.beginPath();
+    context.arc(point.x, point.y, stroke.mode === "erase" ? 18 : 3, 0, Math.PI * 2);
+    context.fill();
+  } else {
+    context.beginPath();
+    context.moveTo(previous.x, previous.y);
+    context.lineTo(point.x, point.y);
+    context.lineWidth = stroke.mode === "erase" ? 42 : 4 + point.pressure * 5;
+    context.stroke();
+  }
+
+  context.restore();
+}
+
 function renderStrokes() {
   drawingContext.clearRect(0, 0, drawingCanvas.width, drawingCanvas.height);
   strokes.forEach((stroke) => drawStroke(drawingContext, stroke));
@@ -164,7 +193,7 @@ drawingCanvas.addEventListener("pointerdown", (event) => {
     mode: erasing ? "erase" : "draw",
     points: [pointFromEvent(event)],
   };
-  renderStrokes();
+  drawLatestStrokePart(drawingContext, currentStroke);
 });
 
 drawingCanvas.addEventListener("pointermove", (event) => {
@@ -173,8 +202,8 @@ drawingCanvas.addEventListener("pointermove", (event) => {
   const events = event.getCoalescedEvents?.() ?? [event];
   for (const coalescedEvent of events) {
     currentStroke.points.push(pointFromEvent(coalescedEvent));
+    drawLatestStrokePart(drawingContext, currentStroke);
   }
-  renderStrokes();
 });
 
 function finishStroke(event) {
@@ -185,13 +214,16 @@ function finishStroke(event) {
   strokes.push(currentStroke);
   currentStroke = null;
   activePointerId = null;
-  renderStrokes();
   updateControls();
   setStatus(erasing ? "Gomme active" : "Écriture enregistrée");
 }
 
 drawingCanvas.addEventListener("pointerup", finishStroke);
 drawingCanvas.addEventListener("pointercancel", finishStroke);
+
+["selectstart", "dragstart", "contextmenu"].forEach((eventName) => {
+  canvasWrap.addEventListener(eventName, (event) => event.preventDefault());
+});
 
 undoButton.addEventListener("click", () => {
   strokes.pop();
