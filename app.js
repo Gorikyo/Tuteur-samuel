@@ -739,6 +739,7 @@ disconnectButton.addEventListener("click", async () => {
 });
 
 const pageParameters = new URLSearchParams(location.search);
+if (pageParameters.has("voice")) document.body.classList.add("voice-embed");
 if (pageParameters.has("connected")) {
   history.replaceState({}, "", location.pathname);
   setTimeout(() => settingsDialog.showModal(), 100);
@@ -750,5 +751,7 @@ if (pageParameters.has("auth_error")) {
   setTimeout(() => resultDialog.showModal(), 150);
 }
 
-loadConfiguration();
+loadConfiguration().then(() => {
+  if (pageParameters.has("voice")) startVoiceConversation();
+});
 updateArchiveCount();

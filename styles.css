@@ -29,6 +29,9 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
+body.voice-embed .app-shell { display: none; }
+body.voice-embed { display: grid; place-items: center; }
+
 button, a, label { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 button { font: inherit; }
 

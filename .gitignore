@@ -2,3 +2,6 @@
 .env
 node_modules/
 .auth/
+DerivedData/
+*.xcuserstate
+xcuserdata/
