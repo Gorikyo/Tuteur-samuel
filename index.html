@@ -37,10 +37,15 @@
 
       <section class="workspace" aria-label="Feuille de devoir">
         <div class="toolbar" aria-label="Outils">
-          <input id="imageInput" type="file" accept="image/*" capture="environment" hidden />
+          <input id="imageInput" type="file" accept="image/*" hidden />
           <button class="tool-button primary" id="loadButton" type="button">
             <span class="tool-icon" aria-hidden="true">＋</span>
-            Charger un devoir
+            <span id="loadButtonLabel">Charger un devoir</span>
+          </button>
+          <button class="tool-button archive-button" id="archiveButton" type="button">
+            <span class="tool-icon" aria-hidden="true">▣</span>
+            Archives
+            <span class="archive-count" id="archiveCount" hidden>0</span>
           </button>
           <button class="tool-button" id="undoButton" type="button" disabled>
             <span class="tool-icon" aria-hidden="true">↶</span>
@@ -97,6 +102,14 @@
         </div>
       </div>
       <button id="closeDialogButton" type="button">Continuer</button>
+    </dialog>
+
+    <dialog class="archive-dialog" id="archiveDialog">
+      <button class="dialog-close" id="closeArchiveButton" type="button" aria-label="Fermer">×</button>
+      <h2>Mes devoirs</h2>
+      <p class="archive-intro">Chaque ancienne feuille est conservée ici lorsque tu charges un nouveau devoir.</p>
+      <div class="archive-list" id="archiveList"></div>
+      <p class="archive-empty" id="archiveEmpty">Aucun devoir archivé pour le moment.</p>
     </dialog>
 
     <dialog class="settings-dialog" id="settingsDialog">

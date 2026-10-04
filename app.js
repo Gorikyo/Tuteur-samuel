@@ -1,6 +1,13 @@
 const imageInput = document.querySelector("#imageInput");
 const loadButton = document.querySelector("#loadButton");
+const loadButtonLabel = document.querySelector("#loadButtonLabel");
 const emptyLoadButton = document.querySelector("#emptyLoadButton");
+const archiveButton = document.querySelector("#archiveButton");
+const archiveCount = document.querySelector("#archiveCount");
+const archiveDialog = document.querySelector("#archiveDialog");
+const archiveList = document.querySelector("#archiveList");
+const archiveEmpty = document.querySelector("#archiveEmpty");
+const closeArchiveButton = document.querySelector("#closeArchiveButton");
 const undoButton = document.querySelector("#undoButton");
 const eraseButton = document.querySelector("#eraseButton");
 const stylusButton = document.querySelector("#stylusButton");
@@ -45,7 +52,9 @@ let stylusOnly = true;
 let activePointerId = null;
 let correctionIssues = [];
 let lastCorrectionContext = "";
+let lastCorrectionResult = null;
 let configuration = { authConnected: false, provider: "none" };
+let archiveObjectUrls = [];
 let voicePeer = null;
 let voiceEvents = null;
 let voiceMicrophone = null;
@@ -61,12 +70,145 @@ function setStatus(message, busy = false) {
   status.classList.toggle("busy", busy);
 }
 
+const archiveDatabase = new Promise((resolve, reject) => {
+  const request = indexedDB.open("tuteur-samuel", 1);
+  request.onupgradeneeded = () => {
+    const database = request.result;
+    if (!database.objectStoreNames.contains("homeworks")) {
+      const store = database.createObjectStore("homeworks", { keyPath: "id" });
+      store.createIndex("savedAt", "savedAt");
+    }
+  };
+  request.onsuccess = () => resolve(request.result);
+  request.onerror = () => reject(request.error || new Error("Historique indisponible"));
+});
+
+async function useArchiveStore(mode, operation) {
+  const database = await archiveDatabase;
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction("homeworks", mode);
+    const request = operation(transaction.objectStore("homeworks"));
+    let result;
+    request.onsuccess = () => { result = request.result; };
+    request.onerror = () => reject(request.error || new Error("Archivage impossible"));
+    transaction.oncomplete = () => resolve(result);
+    transaction.onerror = () => reject(transaction.error || new Error("Archivage impossible"));
+  });
+}
+
+const getArchivedHomeworks = () => useArchiveStore("readonly", (store) => store.getAll());
+const saveArchivedHomework = (homework) => useArchiveStore("readwrite", (store) => store.put(homework));
+const deleteArchivedHomework = (id) => useArchiveStore("readwrite", (store) => store.delete(id));
+
+async function updateArchiveCount() {
+  try {
+    const homeworks = await getArchivedHomeworks();
+    archiveCount.textContent = homeworks.length;
+    archiveCount.hidden = homeworks.length === 0;
+  } catch {
+    archiveCount.hidden = true;
+  }
+}
+
+function archiveState() {
+  if (lastCorrectionResult && correctionIssues.length === 0) return "Terminé";
+  if (lastCorrectionResult) return "Corrigé — à revoir";
+  return strokes.length ? "En cours" : "Non commencé";
+}
+
+async function archiveCurrentHomework() {
+  if (!hasPhoto) return;
+  const image = await exportCompositeBlob();
+  const summary = lastCorrectionResult?.summary
+    || (strokes.length ? `Devoir annoté avec ${strokes.length} geste${strokes.length > 1 ? "s" : ""}.` : "Photo chargée, sans annotation.");
+  await saveArchivedHomework({
+    id: crypto.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    savedAt: new Date().toISOString(),
+    state: archiveState(),
+    summary,
+    nextAction: lastCorrectionResult?.nextAction || "",
+    issues: correctionIssues.map(({ title, hint }) => ({ title, hint })),
+    image,
+  });
+
+  await updateArchiveCount();
+}
+
+function clearArchiveObjectUrls() {
+  archiveObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  archiveObjectUrls = [];
+}
+
+async function renderArchives() {
+  clearArchiveObjectUrls();
+  archiveList.replaceChildren();
+  const homeworks = (await getArchivedHomeworks()).sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+  archiveEmpty.hidden = homeworks.length > 0;
+
+  for (const homework of homeworks) {
+    const card = document.createElement("article");
+    card.className = "archive-card";
+
+    const image = document.createElement("img");
+    const imageUrl = URL.createObjectURL(homework.image);
+    archiveObjectUrls.push(imageUrl);
+    image.src = imageUrl;
+    image.alt = `Aperçu du devoir — ${homework.state}`;
+    image.draggable = false;
+
+    const report = document.createElement("div");
+    const date = document.createElement("time");
+    date.dateTime = homework.savedAt;
+    date.textContent = new Intl.DateTimeFormat("fr-BE", { dateStyle: "medium", timeStyle: "short" }).format(new Date(homework.savedAt));
+    const state = document.createElement("strong");
+    state.textContent = homework.state;
+    const summary = document.createElement("p");
+    summary.textContent = homework.summary;
+    report.append(date, state, summary);
+    if (homework.issues?.length) {
+      const issues = document.createElement("p");
+      issues.className = "archive-issues";
+      issues.textContent = `${homework.issues.length} point${homework.issues.length > 1 ? "s" : ""} à revoir : ${homework.issues.map((issue) => issue.title).join(" · ")}`;
+      report.append(issues);
+    } else if (homework.nextAction) {
+      const nextAction = document.createElement("p");
+      nextAction.textContent = homework.nextAction;
+      report.append(nextAction);
+    }
+
+    const removeButton = document.createElement("button");
+    removeButton.type = "button";
+    removeButton.className = "archive-delete";
+    removeButton.textContent = "Supprimer";
+    removeButton.addEventListener("click", async () => {
+      if (!window.confirm("Supprimer définitivement ce devoir archivé ?")) return;
+      removeButton.disabled = true;
+      await deleteArchivedHomework(homework.id);
+      await updateArchiveCount();
+      await renderArchives();
+    });
+
+    card.append(image, report, removeButton);
+    archiveList.append(card);
+  }
+}
+
 function openImagePicker() {
   imageInput.click();
 }
 
 loadButton.addEventListener("click", openImagePicker);
 emptyLoadButton.addEventListener("click", openImagePicker);
+archiveButton.addEventListener("click", async () => {
+  archiveDialog.showModal();
+  try { await renderArchives(); }
+  catch { archiveEmpty.hidden = false; archiveEmpty.textContent = "L’historique n’est pas disponible sur cet appareil."; }
+});
+closeArchiveButton.addEventListener("click", () => archiveDialog.close());
+archiveDialog.addEventListener("click", (event) => {
+  if (event.target === archiveDialog) archiveDialog.close();
+});
+archiveDialog.addEventListener("close", clearArchiveObjectUrls);
 
 imageInput.addEventListener("change", async () => {
   const [file] = imageInput.files;
@@ -75,6 +217,18 @@ imageInput.addEventListener("change", async () => {
   setStatus("Ouverture de la photo…", true);
   try {
     const bitmap = await createImageBitmap(file);
+    const replacedHomework = hasPhoto;
+    if (replacedHomework) {
+      setStatus("Archivage du devoir précédent…", true);
+      try {
+        await archiveCurrentHomework();
+      } catch (error) {
+        bitmap.close();
+        console.error(error);
+        setStatus("Archivage impossible — le devoir actuel est conservé");
+        return;
+      }
+    }
     const maxSide = 2400;
     const scale = Math.min(1, maxSide / Math.max(bitmap.width, bitmap.height));
     const width = Math.max(1, Math.round(bitmap.width * scale));
@@ -91,13 +245,16 @@ imageInput.addEventListener("change", async () => {
 
     strokes = [];
     correctionIssues = [];
+    lastCorrectionContext = "";
+    lastCorrectionResult = null;
     renderIssueMarkers();
     hasPhoto = true;
     emptyState.hidden = true;
     canvasWrap.hidden = false;
     updateControls();
     renderStrokes();
-    setStatus("Photo chargée");
+    loadButtonLabel.textContent = "Changer de devoir";
+    setStatus(replacedHomework ? "Ancien devoir archivé — nouvelle photo chargée" : "Photo chargée");
   } catch (error) {
     console.error(error);
     setStatus("Impossible d’ouvrir cette photo");
@@ -221,9 +378,9 @@ function finishStroke(event) {
 drawingCanvas.addEventListener("pointerup", finishStroke);
 drawingCanvas.addEventListener("pointercancel", finishStroke);
 
-["selectstart", "dragstart", "contextmenu"].forEach((eventName) => {
-  canvasWrap.addEventListener(eventName, (event) => event.preventDefault());
-});
+document.addEventListener("selectstart", (event) => event.preventDefault());
+document.addEventListener("dragstart", (event) => event.preventDefault());
+canvasWrap.addEventListener("contextmenu", (event) => event.preventDefault());
 
 undoButton.addEventListener("click", () => {
   strokes.pop();
@@ -252,14 +409,27 @@ function updateControls() {
   verifyButton.disabled = !hasPhoto;
 }
 
-function exportComposite() {
+function createCompositeCanvas() {
   const exportCanvas = document.createElement("canvas");
   exportCanvas.width = photoCanvas.width;
   exportCanvas.height = photoCanvas.height;
   const context = exportCanvas.getContext("2d");
   context.drawImage(photoCanvas, 0, 0);
   context.drawImage(drawingCanvas, 0, 0);
-  return exportCanvas.toDataURL("image/jpeg", 0.9);
+  return exportCanvas;
+}
+
+function exportComposite() {
+  return createCompositeCanvas().toDataURL("image/jpeg", 0.9);
+}
+
+function exportCompositeBlob() {
+  return new Promise((resolve, reject) => {
+    createCompositeCanvas().toBlob((blob) => {
+      if (blob) resolve(blob);
+      else reject(new Error("La copie du devoir n’a pas pu être créée."));
+    }, "image/jpeg", 0.86);
+  });
 }
 
 function renderIssueMarkers() {
@@ -282,6 +452,10 @@ function renderIssueMarkers() {
 
 function showCorrection(result) {
   correctionIssues = Array.isArray(result.issues) ? result.issues : [];
+  lastCorrectionResult = {
+    summary: result.summary || result.message || "Vérification terminée.",
+    nextAction: result.nextAction || "",
+  };
   lastCorrectionContext = [
     result.summary || result.message || "",
     ...correctionIssues.map((issue) => `${issue.title} : ${issue.hint}`),
@@ -576,3 +750,4 @@ if (pageParameters.has("auth_error")) {
 }
 
 loadConfiguration();
+updateArchiveCount();
