@@ -1,17 +1,23 @@
-import { createServer } from "node:http";
+import { createServer as createHttpServer } from "node:http";
+import { createServer as createHttpsServer } from "node:https";
 import { createHash, createPublicKey, randomBytes, randomUUID, verify } from "node:crypto";
 import { chmod, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, hostname } from "node:os";
 import { extname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL(".", import.meta.url));
 const port = Number(process.env.PORT || 4173);
+const httpsPort = Number(process.env.HTTPS_PORT || 4174);
 const host = process.env.HOST || "0.0.0.0";
 const apiModel = process.env.OPENAI_MODEL || "gpt-6-luna";
 const configDir = process.env.TUTEUR_CONFIG_DIR || join(homedir(), ".config", "tuteur-samuel");
 const authFile = join(configDir, "chatgpt-auth.json");
 const hostFile = join(configDir, "host.json");
+const tlsDir = join(configDir, "tls");
+const tlsKeyFile = process.env.TLS_KEY_FILE || join(tlsDir, "server-key.pem");
+const tlsCertificateFile = process.env.TLS_CERT_FILE || join(tlsDir, "server-cert.pem");
+const localCaFile = join(tlsDir, "root-ca.cer");
 const resource = "https://api.openai.com/v1";
 const issuer = "https://auth.openai.com";
 const redirectUri = `http://127.0.0.1:${port}/auth/openai/callback`;
@@ -375,9 +381,34 @@ async function createLiveSession(request, response) {
   return json(response, 201, result);
 }
 
-const server = createServer(async (request, response) => {
+function httpsSetupPage(request) {
+  const requestHost = (request.headers.host || "localhost").replace(/:\d+$/, "");
+  const secureUrl = `https://${requestHost}:${httpsPort}/`;
+  return `<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Activer HTTPS — Tuteur Samuel</title>
+<style>body{margin:0;background:#f3f7f9;color:#17364d;font:18px/1.5 -apple-system,BlinkMacSystemFont,sans-serif}main{max-width:680px;margin:auto;padding:42px 24px}section{background:white;padding:28px;border-radius:22px;box-shadow:0 15px 45px #18364d18}h1{margin-top:0;font-size:32px}li{margin:18px 0}a{display:inline-block;padding:14px 20px;border-radius:999px;background:#174f7a;color:white;text-decoration:none;font-weight:750}.secondary{background:#e5eef3;color:#174f7a}</style></head>
+<body><main><section><h1>Activer le micro sur l’iPad</h1><p>Cette installation est nécessaire une seule fois pour que Safari fasse confiance à la page HTTPS locale.</p>
+<ol><li><a href="/tuteur-samuel-ca.cer">Télécharger le certificat</a></li><li>Dans Réglages, ouvre <strong>Profil téléchargé</strong>, puis touche <strong>Installer</strong>.</li><li>Va dans <strong>Réglages → Général → Informations → Réglages des certificats</strong> et active la confiance pour <strong>Tuteur Samuel Local CA</strong>.</li></ol>
+<p><a class="secondary" href="${secureUrl}">Ouvrir Tuteur Samuel en HTTPS</a></p></section></main></body></html>`;
+}
+
+const handleRequest = async (request, response) => {
   const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
   try {
+    if (request.method === "GET" && url.pathname === "/installer-https") {
+      response.writeHead(200, { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" });
+      return response.end(httpsSetupPage(request));
+    }
+    if (request.method === "GET" && url.pathname === "/tuteur-samuel-ca.cer") {
+      const certificate = await readFile(localCaFile);
+      response.writeHead(200, {
+        "Content-Type": "application/x-x509-ca-cert",
+        "Content-Disposition": "attachment; filename=tuteur-samuel-ca.cer",
+        "Cache-Control": "no-store",
+      });
+      return response.end(certificate);
+    }
     if (request.method === "GET" && url.pathname === "/auth/openai/start") return await startOAuth(response);
     if (request.method === "GET" && url.pathname === "/auth/openai/callback") return await finishOAuth(url, response);
     if (request.method === "POST" && url.pathname === "/auth/openai/logout") {
@@ -414,6 +445,21 @@ const server = createServer(async (request, response) => {
     response.writeHead(200, { "Content-Type": mimeTypes[extname(file)] || "application/octet-stream", "Cache-Control": "no-store" });
     response.end(request.method === "HEAD" ? undefined : contents);
   } catch { json(response, 404, { message: "Page introuvable" }); }
+};
+
+const httpServer = createHttpServer(handleRequest);
+httpServer.listen(port, host, () => {
+  console.log(`Tuteur Samuel est disponible sur http://127.0.0.1:${port}`);
 });
 
-server.listen(port, host, () => console.log(`Tuteur Samuel est disponible sur http://127.0.0.1:${port}`));
+try {
+  const [key, cert] = await Promise.all([readFile(tlsKeyFile), readFile(tlsCertificateFile)]);
+  const httpsServer = createHttpsServer({ key, cert }, handleRequest);
+  httpsServer.listen(httpsPort, host, () => {
+    console.log(`Version iPad HTTPS : https://${hostname().replace(/\.local$/i, "")}.local:${httpsPort}`);
+    console.log(`Installation iPad : http://${hostname().replace(/\.local$/i, "")}.local:${port}/installer-https`);
+  });
+} catch (error) {
+  if (error.code !== "ENOENT") console.error("HTTPS n’a pas pu démarrer :", error.message);
+  else console.log("HTTPS non configuré. Lance « Configurer HTTPS.command » une fois.");
+}
